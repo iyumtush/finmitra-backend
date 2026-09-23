@@ -24,7 +24,7 @@
 This repository is organized into distinct, decoupled `frontend` and `backend` workspaces:
 
 ```text
-finmitra-backend/
+finmitra/
 ├── frontend/                     # ⚛️ React 18 Single-Page Application
 │   ├── src/                      # Components, Views, Hooks, Context, APIs
 │   │   ├── api/                  # Backend REST connectors (Auth, Profile, Transactions, AI)
