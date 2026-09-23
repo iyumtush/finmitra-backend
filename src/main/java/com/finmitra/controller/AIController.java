@@ -23,7 +23,7 @@ public class AIController {
 
     @GetMapping("/insights")
     public ResponseEntity<AIInsightResponse> getInsights(Authentication authentication) {
-        String userEmail = authentication.getName();
+        String userEmail = authentication != null ? authentication.getName() : null;
         AIInsightResponse insights = aiService.generateInsights(userEmail);
         return ResponseEntity.ok(insights);
     }
@@ -33,7 +33,7 @@ public class AIController {
             @Valid @RequestBody ChatRequest request,
             Authentication authentication
     ) {
-        String userEmail = authentication.getName();
+        String userEmail = authentication != null ? authentication.getName() : null;
         ChatResponse response = aiService.chatWithAI(userEmail, request);
         return ResponseEntity.ok(response);
     }
@@ -43,7 +43,7 @@ public class AIController {
             @RequestBody ReceiptParseRequest request,
             Authentication authentication
     ) {
-        String userEmail = authentication.getName();
+        String userEmail = authentication != null ? authentication.getName() : null;
         ReceiptParseResponse response = aiService.parseReceipt(userEmail, request);
         return ResponseEntity.ok(response);
     }

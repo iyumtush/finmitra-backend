@@ -36,7 +36,7 @@ public class AIServiceImpl implements AIService {
     @Value("${gemini.api.key:}")
     private String geminiApiKey;
 
-    @Value("${gemini.api.url:https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent}")
+    @Value("${gemini.api.url:https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent}")
     private String geminiApiUrl;
 
     public AIServiceImpl(UserRepository userRepository,
@@ -134,11 +134,18 @@ public class AIServiceImpl implements AIService {
 
     @Override
     public ChatResponse chatWithAI(String userEmail, ChatRequest request) {
-        User user = userRepository.findByEmail(userEmail)
-                .orElseThrow(() -> new APIException(HttpStatus.NOT_FOUND, "User not found"));
+        User user = (userEmail != null && !userEmail.trim().isEmpty())
+                ? userRepository.findByEmail(userEmail).orElse(null)
+                : null;
 
-        List<Transaction> transactions = transactionRepository.findByUserIdOrderByDateDescIdDesc(user.getId());
-        List<Budget> budgets = budgetRepository.findByUserId(user.getId());
+        String userName = user != null ? user.getName() : "Friend";
+
+        List<Transaction> transactions = user != null
+                ? transactionRepository.findByUserIdOrderByDateDescIdDesc(user.getId())
+                : Collections.emptyList();
+        List<Budget> budgets = user != null
+                ? budgetRepository.findByUserId(user.getId())
+                : Collections.emptyList();
 
         BigDecimal totalIncome = BigDecimal.ZERO;
         BigDecimal totalExpense = BigDecimal.ZERO;
@@ -170,7 +177,7 @@ public class AIServiceImpl implements AIService {
 
         // Build Data Context for Gemini API
         StringBuilder contextBuilder = new StringBuilder();
-        contextBuilder.append(String.format("USER PROFILE: %s (Email: %s)\n", user.getName(), user.getEmail()));
+        contextBuilder.append(String.format("USER PROFILE: %s (Email: %s)\n", userName, user != null ? user.getEmail() : "N/A"));
         contextBuilder.append(String.format("FINANCIAL STATUS: Total Income = ₹%.2f, Total Expenses = ₹%.2f, Monthly Net Savings = ₹%.2f\n\n",
                 totalIncome, totalExpense, savings));
 
@@ -191,8 +198,8 @@ public class AIServiceImpl implements AIService {
         String userQuery = request.getMessage().trim();
 
         String systemPrompt = String.format(
-                "You are FinMitra AI, an expert financial advisor for %s. " +
-                "Evaluate the user's financial question thoughtfully using their real data provided below.\n" +
+                "You are FinMitra AI, an expert personal finance advisor for %s. " +
+                "Evaluate the user's financial question thoughtfully.\n" +
                 "GUIDELINES:\n" +
                 "1. Address %s directly.\n" +
                 "2. If asked about taking a loan, buying a car/house/phone, or making a big purchase: Evaluate if their monthly net savings (₹%.2f) can comfortably cover the purchase or EMI without compromising essential expenses. Give practical advice.\n" +
@@ -201,7 +208,7 @@ public class AIServiceImpl implements AIService {
                 "5. Keep responses concise, warm, professional, and within 3-4 sentences.\n\n" +
                 "REAL USER FINANCIAL CONTEXT:\n%s\n\n" +
                 "USER QUESTION: %s",
-                user.getName(), user.getName(), savings, contextBuilder.toString(), userQuery
+                userName, userName, savings, contextBuilder.toString(), userQuery
         );
 
         try {
@@ -218,46 +225,46 @@ public class AIServiceImpl implements AIService {
         String fallbackReply;
 
         if (lowerQuery.matches(".*\\b(hello|hi|hey|greetings|hola)\\b.*")) {
-            fallbackReply = String.format("Hi %s! How are you doing today? How can I help you manage your finances, loans, or savings?", user.getName());
+            fallbackReply = String.format("Hi %s! How are you doing today? How can I help you manage your finances, loans, or savings?", userName);
         } else if (lowerQuery.contains("how are you")) {
-            fallbackReply = String.format("I'm doing great, %s! Ready to help you with your budget, loans, or investment decisions!", user.getName());
+            fallbackReply = String.format("I'm doing great, %s! Ready to help you with your budget, loans, or investment decisions!", userName);
         } else if (lowerQuery.contains("loan") || lowerQuery.contains("car") || lowerQuery.contains("emi") || lowerQuery.contains("vehicle") || lowerQuery.contains("buy") || lowerQuery.contains("purchase") || lowerQuery.contains("afford")) {
             BigDecimal maxSafeEmi = savings.multiply(new BigDecimal("0.35")).setScale(2, RoundingMode.HALF_UP);
             if (savings.compareTo(BigDecimal.ZERO) > 0) {
                 fallbackReply = String.format("Hi %s! With your monthly income of ₹%,.2f and net savings of ₹%,.2f, taking a loan is feasible if your monthly EMI stays below ~₹%,.2f (35%% of your net savings). Make sure to keep an emergency fund intact!",
-                        user.getName(), totalIncome, savings, maxSafeEmi);
+                        userName, totalIncome, savings, maxSafeEmi);
             } else {
                 fallbackReply = String.format("Hi %s, your current expenses (₹%,.2f) equal or exceed your income (₹%,.2f). Taking a new loan now is risky — try reducing expenses first to create positive net savings!",
-                        user.getName(), totalExpense, totalIncome);
+                        userName, totalExpense, totalIncome);
             }
         } else if ((lowerQuery.contains("which") || lowerQuery.contains("what") || lowerQuery.contains("highest") || lowerQuery.contains("most"))
                 && (lowerQuery.contains("category") || lowerQuery.contains("spend") || lowerQuery.contains("expense"))) {
             if (!topCatName.equals("None") && topCatAmount.compareTo(BigDecimal.ZERO) > 0) {
                 fallbackReply = String.format("Hi %s, you spend the most money on '%s' with a total expense of ₹%,.2f.",
-                        user.getName(), topCatName, topCatAmount);
+                        userName, topCatName, topCatAmount);
             } else {
-                fallbackReply = String.format("Hi %s, you haven't logged any category expenses yet.", user.getName());
+                fallbackReply = String.format("Hi %s, you haven't logged any category expenses yet.", userName);
             }
         } else if (lowerQuery.contains("income") || lowerQuery.contains("salary") || lowerQuery.contains("earned")) {
-            fallbackReply = String.format("Hi %s, your total logged income is ₹%,.2f.", user.getName(), totalIncome);
+            fallbackReply = String.format("Hi %s, your total logged income is ₹%,.2f.", userName, totalIncome);
         } else if (lowerQuery.contains("expense") || lowerQuery.contains("spent") || lowerQuery.contains("spend")) {
             Optional<String> matchedCat = categoryTotals.keySet().stream().filter(c -> lowerQuery.contains(c.toLowerCase())).findFirst();
             if (matchedCat.isPresent()) {
                 String catName = matchedCat.get();
                 BigDecimal catAmt = categoryTotals.get(catName);
-                fallbackReply = String.format("Hi %s, you have spent ₹%,.2f on '%s' this period.", user.getName(), catAmt, catName);
+                fallbackReply = String.format("Hi %s, you have spent ₹%,.2f on '%s' this period.", userName, catAmt, catName);
             } else {
                 fallbackReply = String.format("Hi %s, your total expenses are ₹%,.2f. Your highest spend category is '%s' (₹%,.2f).",
-                        user.getName(), totalExpense, topCatName, topCatAmount);
+                        userName, totalExpense, topCatName, topCatAmount);
             }
         } else if (lowerQuery.contains("saving") || lowerQuery.contains("balance") || lowerQuery.contains("invest") || lowerQuery.contains("sip")) {
             fallbackReply = String.format("Hi %s, your net savings stand at ₹%,.2f. Consider putting 30%% of savings (₹%,.2f/month) into an RD or SIP!",
-                    user.getName(), savings, savings.multiply(new BigDecimal("0.30")).setScale(2, RoundingMode.HALF_UP));
+                    userName, savings, savings.multiply(new BigDecimal("0.30")).setScale(2, RoundingMode.HALF_UP));
         } else if (lowerQuery.contains("weather") || lowerQuery.contains("recipe") || lowerQuery.contains("match") || lowerQuery.contains("movie") || lowerQuery.contains("cricket")) {
-            fallbackReply = String.format("Hi %s, that question is unrelated to your financial data! Feel free to ask me about your expenses, loans, budgets, or savings.", user.getName());
+            fallbackReply = String.format("Hi %s, that question is unrelated to your financial data! Feel free to ask me about your expenses, loans, budgets, or savings.", userName);
         } else {
-            fallbackReply = String.format("Hi %s! You have earned ₹%,.2f and spent ₹%,.2f this period, giving ₹%,.2f in net savings. Ask me about loans, purchases, budgets, or savings advice!",
-                    user.getName(), totalIncome, totalExpense, savings);
+            fallbackReply = String.format("Hi %s, based on your current finances (Income: ₹%,.2f, Expenses: ₹%,.2f, Net Savings: ₹%,.2f), maintaining a healthy 20%%+ savings rate and investing in index funds or SIPs is recommended.",
+                    userName, totalIncome, totalExpense, savings);
         }
 
         return new ChatResponse(fallbackReply);
