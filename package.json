@@ -1,0 +1,22 @@
+{
+  "name": "finmitra-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "FinMitra Full-Stack Application — React 18 Frontend & Spring Boot 3 Java Backend",
+  "scripts": {
+    "dev:frontend": "cd frontend && npm run dev",
+    "build:frontend": "cd frontend && npm run build",
+    "dev:backend": "cd backend && ./mvnw spring-boot:run",
+    "build:backend": "cd backend && ./mvnw clean package -DskipTests"
+  },
+  "keywords": [
+    "fintech",
+    "react",
+    "spring-boot",
+    "java",
+    "gemini-ai",
+    "mysql"
+  ],
+  "author": "Priyanshu Verma",
+  "license": "MIT"
+}
