@@ -263,12 +263,23 @@ public class AIServiceImpl implements AIService {
         return new ChatResponse(fallbackReply);
     }
 
-    private String callGeminiApi(String promptText) throws Exception {
+    private List<String> getApiKeys() {
         if (geminiApiKey == null || geminiApiKey.trim().isEmpty()) {
+            return Collections.emptyList();
+        }
+        return Arrays.stream(geminiApiKey.split(","))
+                .map(String::trim)
+                .map(k -> k.replaceAll("^[\"']|[\"']$", ""))
+                .filter(k -> !k.isEmpty())
+                .distinct()
+                .toList();
+    }
+
+    private String callGeminiApi(String promptText) {
+        List<String> keys = getApiKeys();
+        if (keys.isEmpty()) {
             return null;
         }
-
-        String fullUrl = geminiApiUrl + "?key=" + geminiApiKey;
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
@@ -284,14 +295,21 @@ public class AIServiceImpl implements AIService {
 
         HttpEntity<Map<String, Object>> entity = new HttpEntity<>(requestBody, headers);
 
-        ResponseEntity<String> response = restTemplate.postForEntity(fullUrl, entity, String.class);
-
-        if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
-            JsonNode root = objectMapper.readTree(response.getBody());
-            JsonNode candidates = root.path("candidates");
-            if (candidates.isArray() && candidates.size() > 0) {
-                JsonNode textNode = candidates.get(0).path("content").path("parts").get(0).path("text");
-                return textNode.asText();
+        for (int i = 0; i < keys.size(); i++) {
+            String key = keys.get(i);
+            String fullUrl = geminiApiUrl + "?key=" + key;
+            try {
+                ResponseEntity<String> response = restTemplate.postForEntity(fullUrl, entity, String.class);
+                if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                    JsonNode root = objectMapper.readTree(response.getBody());
+                    JsonNode candidates = root.path("candidates");
+                    if (candidates.isArray() && candidates.size() > 0) {
+                        JsonNode textNode = candidates.get(0).path("content").path("parts").get(0).path("text");
+                        return textNode.asText();
+                    }
+                }
+            } catch (Exception e) {
+                System.err.println("Gemini API key #" + (i + 1) + " failed: " + e.getMessage() + ". Attempting fallback to next key...");
             }
         }
         return null;
@@ -320,7 +338,7 @@ public class AIServiceImpl implements AIService {
                 return resp;
             }
         } catch (Exception e) {
-            // Log and fallback
+            System.err.println("Receipt parsing error: " + e.getMessage());
         }
 
         ReceiptParseResponse fallback = new ReceiptParseResponse();
@@ -333,12 +351,16 @@ public class AIServiceImpl implements AIService {
         return fallback;
     }
 
-    private String callGeminiVisionApi(String promptText, String base64Image, String mimeType) throws Exception {
-        if (geminiApiKey == null || geminiApiKey.trim().isEmpty()) {
+    private String callGeminiVisionApi(String promptText, String base64Image, String mimeType) {
+        List<String> keys = getApiKeys();
+        if (keys.isEmpty()) {
             return null;
         }
 
-        String fullUrl = geminiApiUrl + "?key=" + geminiApiKey;
+        String cleanBase64 = base64Image;
+        if (cleanBase64.contains(",")) {
+            cleanBase64 = cleanBase64.substring(cleanBase64.indexOf(",") + 1);
+        }
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
@@ -348,7 +370,7 @@ public class AIServiceImpl implements AIService {
 
         Map<String, Object> inlineData = new HashMap<>();
         inlineData.put("mimeType", mimeType != null ? mimeType : "image/jpeg");
-        inlineData.put("data", base64Image);
+        inlineData.put("data", cleanBase64);
 
         Map<String, Object> imagePart = new HashMap<>();
         imagePart.put("inlineData", inlineData);
@@ -361,14 +383,21 @@ public class AIServiceImpl implements AIService {
 
         HttpEntity<Map<String, Object>> entity = new HttpEntity<>(requestBody, headers);
 
-        ResponseEntity<String> response = restTemplate.postForEntity(fullUrl, entity, String.class);
-
-        if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
-            JsonNode root = objectMapper.readTree(response.getBody());
-            JsonNode candidates = root.path("candidates");
-            if (candidates.isArray() && candidates.size() > 0) {
-                JsonNode textNode = candidates.get(0).path("content").path("parts").get(0).path("text");
-                return textNode.asText();
+        for (int i = 0; i < keys.size(); i++) {
+            String key = keys.get(i);
+            String fullUrl = geminiApiUrl + "?key=" + key;
+            try {
+                ResponseEntity<String> response = restTemplate.postForEntity(fullUrl, entity, String.class);
+                if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                    JsonNode root = objectMapper.readTree(response.getBody());
+                    JsonNode candidates = root.path("candidates");
+                    if (candidates.isArray() && candidates.size() > 0) {
+                        JsonNode textNode = candidates.get(0).path("content").path("parts").get(0).path("text");
+                        return textNode.asText();
+                    }
+                }
+            } catch (Exception e) {
+                System.err.println("Gemini Vision API key #" + (i + 1) + " failed: " + e.getMessage() + ". Attempting fallback to next key...");
             }
         }
         return null;
